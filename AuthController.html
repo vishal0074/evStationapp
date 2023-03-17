@@ -1,0 +1,212 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use App\Models\{User,Slider,Vehicle};
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Auth;
+use Illuminate\Support\Facades\Hash;
+use Illuminate\Support\Facades\Validator;
+use Exception;
+use Twilio\Rest\Client;
+
+class AuthController extends Controller
+{
+
+    /**
+     * Login The User
+     * @param Request $request
+     * @return User
+     */
+    public function loginUser(Request $request)
+    {
+        try {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'country_code' => 'required',
+                'phone' => 'required|max:10',
+                'user_type' => 'required',
+                'device_token' => 'required',
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+
+            $code = mt_rand(1111,9999);
+            $receiverNumber = $request->phone;
+            $country_code = $request->country_code;
+            $message = "Your EV Charging APP Verification code is ".$code;
+  
+            $account_sid = env("TWILIO_SID");
+            $auth_token = env("TWILIO_AUTH_TOKEN");
+            $twilio_number = env("TWILIO_NUMBER");
+          
+             $client = new Client($account_sid, $auth_token);
+             $client->messages->create($country_code.$receiverNumber, [
+                 'from' => $twilio_number, 
+                 'body' => $message]);
+            $is_exist = User::where('phone',$receiverNumber)->first();
+            $user = [
+                'phone' => $receiverNumber,
+                'code' => $code,
+                'country_code' => $country_code,
+                'user_type' => $request->user_type,
+                'device_token' => $request->device_token,
+                'verification_time' =>  date('Y-m-d H:i:s', strtotime('2 minute'))
+            ];
+            if(empty($is_exist)){
+                $user_result = User::create($user);
+            }else{
+                $user_result = User::where('phone',$receiverNumber)->update($user);
+            }
+    
+            return response()->json([
+                'status' => 'true',
+                'message' => 'verification code has been sent',
+                'code' => $code,
+            ], 200);
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+
+    public function verifyOTP(Request $request){
+        
+        try {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'country_code' => 'required',
+                'phone' => 'required|max:10',
+                'otp' => 'required',
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+
+            $verify_user = User::where('phone',$request->phone)->where('code',$request->otp)->first();
+           
+            if($verify_user){
+                $verify_user->vehicle_status = 0;
+                if(Vehicle::where('user_id',$verify_user->id)->count()>0){
+                    $verify_user->vehicle_status = 1;
+                }
+                //echo date('Y-m-d H:i:s'); exit;
+                if(date('Y-m-d H:i:s') <= $verify_user->verification_time){
+                    return response()->json([
+                        'status' => 'true',
+                        'message' => 'User Logged In Successfully',
+                        'data' => $verify_user,
+                        'token' => $verify_user->createToken("API TOKEN")->plainTextToken
+                    ], 200);
+                }else{
+                    return response()->json([
+                        'status' => 'false',
+                        'message' => 'Verification code has been expired',
+                    ], 200);
+                }
+            }else{
+
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'Verification code is not valid',
+                ], 200);
+
+            }
+        }catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+
+    public function resendOTP(Request $request){
+        try {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'country_code' => 'required',
+                'phone' => 'required|min:10|max:10',
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+
+            $code = mt_rand(1111,9999);
+            $receiverNumber = $request->phone;
+            $country_code = $request->country_code;
+            $message = "Your EV Charging APP Verification code is ".$code;
+  
+            $account_sid = env("TWILIO_SID");
+            $auth_token = env("TWILIO_AUTH_TOKEN");
+            $twilio_number = env("TWILIO_NUMBER");
+          
+            
+            $is_exist = User::where('phone',$receiverNumber)->first();
+            
+            if(!empty($is_exist)){
+                $client = new Client($account_sid, $auth_token);
+                $client->messages->create($country_code.$receiverNumber, [
+                        'from' => $twilio_number, 
+                        'body' => $message]);
+                $user = [
+                    'phone' => $receiverNumber,
+                    'code' => $code,
+                    'country_code' => $country_code,
+                    'verification_time' =>  date('Y-m-d H:i:s', strtotime('2 minute'))
+                ];
+                $user_result = User::where('phone',$receiverNumber)->update($user);
+                if(!empty($user_result)){
+                    return response()->json([
+                        'status' => 'true',
+                        'code' => $code,
+                        'message' => 'Verification code has been resent successfully!',
+                    ], 200);
+                }else{
+                    return response()->json([
+                        'status' => 'false',
+                        'message' => 'Oops! something went wrong!',
+                    ], 200);
+                }
+            }else{
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'User is not exist',
+                ], 200);
+            }
+        }catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+
+    public function onboarding(Request $request){
+        $sliders = Slider::all();
+
+        return response()->json([
+            'status' => 'true',
+            'data' => $sliders,
+        ], 200);
+    }
+}

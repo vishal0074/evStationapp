@@ -1,0 +1,359 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use Illuminate\Support\Facades\Validator;
+use Illuminate\Support\Facades\Storage;
+use App\Models\{User,Slider,Station,Vehicle,Payment,feedback, signout, File,StationChargeList, review};
+use URL;
+use DB;
+
+class HomeController extends Controller
+{
+    public function editProfile(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'name' => 'required',
+                'email' => 'required|email|unique:users,email,'.$request->user_id,
+                'phone' => 'required|unique:users,phone,'.$request->user_id,
+                'country_code' => 'required',
+                'pin_code' => 'required',
+                'user_id' => 'required'
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+            $data = $request->all();
+            unset($data['phone']);
+            unset($data['user_id']);
+            $user = User::find($request->user_id);
+            if(empty($user)){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'user not found'
+                ], 500);
+           }
+           $user = User::find($request->user_id);
+          
+            if(empty($user)){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'user not found'
+                ], 500);
+             
+            }else{
+                if($request->phone!=$user->phone){
+                    $code = mt_rand(1111,9999);
+                    $result = User::sendMessage($request->country_code.$request->phone,$code);
+                    if($result){
+                        $data['phone'] = $request->phone;
+                        $data['code'] = $code; 
+                        $data['country_code'] = $request->country_code;
+                        $data['profile_status'] = 1;
+                        $data['verification_time'] = date('Y-m-d H:i:s', strtotime('2 minute'));
+                    }else{
+                        return response()->json([
+                            'status' => 'false',
+                            'message' => 'Oops! something went wrong!',
+                        ], 200);
+                    }
+              }
+              
+                $user = User::where('phone',$user->phone)->update($data);
+               
+                if($user){
+                    if(!$code){
+                        return response()->json([
+                            'status' => 'true',
+                            'message' => 'Profile has been updated successfully!',
+                        ], 200);
+                    }else{
+                        return response()->json([
+                            'status' => 'true',
+                            'message' => 'OTP has been sent successfully!',
+                            'code' => $code,
+                        ], 200);
+                    }
+                }else{
+                    return response()->json([
+                        'status' => 'false',
+                        'message' => 'Profile has not been updated successfully!',
+                    ], 200);
+                }
+            }
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+    
+    public function home(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'user_id' => 'required',
+                'latitude' => 'required',
+               'longitude' => 'required'
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }else{
+                $station = User::where('id',$request->user_id)->first();
+                if(!empty($station)){
+                $stations  = DB::table('reviews') 
+                ->rightJoin('stations', 'reviews.station_id', '=' ,'stations.id')
+                ->select('stations.id', 'stations.provider_id', 'stations.station_name', 'stations.station_latitude', 'stations.station_longitude','stations.charging_station_type', 'stations.charging_station_status',
+                'stations.station_open_time', 'stations.station_close_time', 'stations.station_image', 'stations.station_description',DB::raw('Count(user_id) as reviews'), DB::raw('SUM(rating)/COUNT(user_id) as ratted'))
+                ->groupBy('id','provider_id', 'station_id', 'station_id', 'station_name', 'station_latitude', 'station_longitude', 'charging_station_type', 'charging_station_status', 'station_open_time','station_close_time', 'station_image', 'station_description')
+                ->orderBy('reviews', 'desc')
+                 ->get();
+                  
+                 return response()->json([
+                'status' => 'true',
+                'message' => 'success',
+                'data' => $stations
+            ], 200);
+           }else{
+            return response()->json([
+                'status' => 'false',
+                'message' => 'User is not found'
+            ], 200);
+          }
+         }
+           }catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+
+    public function profile(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'user_id' => 'required',
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+
+            $user = User::find($request->user_id);
+            return response()->json([
+                'status' => 'true',
+                'data' => $user,
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+
+    public function updatePhoneVerify(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'user_id' => 'required',
+                'phone' => 'required',
+                'country_code' => 'required',
+                'otp' => 'required'
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+
+            $verify_user = User::where('phone',$request->phone)->where('code',$request->otp)->first();
+            if($verify_user){
+                if(date('Y-m-d H:i:s') <= $verify_user->verification_time){
+                    return response()->json([
+                        'status' => 'true',
+                        'message' => 'User verified & details updated Successfully',
+                        'data' => $verify_user,
+                    ], 200);
+                }else{
+                    return response()->json([
+                        'status' => 'false',
+                        'message' => 'Verification code has been expired',
+                    ], 200);
+                }
+            }else{
+
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'Verification code is not valid',
+                ], 200);
+
+            }
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+            
+    }
+
+    public function stationInfo(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'user_id' => 'required',
+                'station_id' => 'required',
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+            $station = Station::/*where('provider_id',$request->user_id)->*/where('id',$request->station_id)->first();
+            if(!empty($station)){
+                $charging_list = StationChargeList::where('station_id',$request->station_id)->get();
+              //  $review_list = review::where('station_id',$request->station_id)->get();
+
+                $station->charging_lists = !empty($charging_list) ?  $charging_list : ""; 
+                $station->station_review_list = [];
+                $data['stations'] = $station;
+                $data['station review_list'] = [];
+                return response()->json([
+                    'status' => 'true',
+                    'data' => $data,
+                    'station' => $station
+                ], 200);
+            }else{
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'Station is not found'
+                ], 200);
+            }
+           }catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+
+    public function myCars(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'user_id' => 'required',
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+            $vehicles = Vehicle::where('user_id',$request->user_id)->get();
+            return response()->json([
+                'status' => 'true',
+                'data' => $vehicles,
+            ], 200);
+
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+    public function userPayment(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'user_id' => 'required',
+                'transaction_id' => 'required',
+                'total_amount' => 'required',
+                'payment_status' => 'required',
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+
+            Payment::create($request->all());
+            return response()->json([
+                'status' => 'true',
+                'message' => 'User Payment updated successfully!'
+            ], 200);
+        } catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+         }
+      }
+     public function sign_out(Request $request){
+        try 
+        {
+        //$data = $request->validate([
+            $validateUser = Validator::make($request->all(), 
+            [
+            'id' => 'required',
+           ]);
+           if($validateUser->fails()){
+            return response()->json([
+                'status' => 'false',
+                'message' => 'validation error',
+                'errors' => $validateUser->errors()
+            ], 401);
+        }
+        $user =  User::find($request->id)->update(["device_token"=>null]);//->first();
+        $result = [
+            'status' =>'true',
+            'message' =>'Sign out Successfully',
+        ];
+        return response($result, 201);
+       }catch (\Throwable $th) {
+        return response()->json([
+            'status' => 'false',
+            'message' => $th->getMessage()
+        ], 500);
+      }
+    }    
+}

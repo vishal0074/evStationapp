@@ -1,0 +1,265 @@
+<?php
+
+namespace App\Http\Controllers\Api;
+
+use App\Http\Controllers\Controller;
+use Illuminate\Http\Request;
+use App\Models\{Station,StationChargeList,Vehicle,ChargingStationType,ChargingStationStatus,ChargingType,ChargerConnector};
+use Illuminate\Support\Facades\Validator;
+use URL;
+
+class ProviderController extends Controller
+{
+    public function addStation(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'provider_id' => 'required',
+                'station_name' => 'required|unique:stations',
+                'charging_station_type' => 'required',
+                'charging_station_status' => 'required',
+                'station_longitude' => 'required',
+                'station_latitude' => 'required',
+                'station_open_time' => 'required',
+                'station_close_time' => 'required',
+                'station_description' => 'required',
+                'station_image' => 'required|image|mimes:jpg,png,jpeg,gif,svg|max:2048',
+                'charger_list' => 'required'
+            ]);
+           
+          
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+
+            $imageName = time().'.'.$request->station_image->extension();  
+            $request->file('station_image')->move(public_path('stations'), $imageName);
+            
+
+            $station = $request->all();
+            unset($station['charger_list']);
+            $station['station_image'] = URL::to('/').'/stations/'.$imageName;
+            $result = Station::create($station);
+          
+            $charger_lists = json_decode($request->charger_list,true);
+            if(!empty($charger_lists)){
+                foreach($charger_lists as $key => $list){
+                    $charger_list = [
+                        'station_id' => $result->id,
+                        'charger_type' => $list['charger_type'],
+                        'charger_slots' => $list['charger_slots'],
+                        'charger_voltage' => $list['charger_voltage'],
+                        'price_per_mint' => $list['price_per_mint'],
+                    ];
+                
+                    StationChargeList::create($charger_list);
+                }
+            }
+        
+            return response()->json([
+                'status' => 'true',
+                'message' => 'Station has been added successfully!',
+            ], 200);
+
+        }catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+
+    public function addVehicle(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'company_name' => 'required',
+                'car_model' => 'required',
+                'user_id'  => 'required',
+                'registration_number' => 'required|unique:vehicles',
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+            
+            $vehicle = Vehicle::create($request->all());
+            return response()->json([
+                'status' => 'true',
+                'message' => 'Vehicles has been added successfully!',
+            ], 200);
+
+        }catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+
+    public function providerHome(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'provider_id' => 'required',
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'errors' => 'Provider is required field'
+                ], 401);
+            }
+
+            $provider = Station::where('provider_id',$request->provider_id)->get();
+
+            return response()->json([
+                'status' => 'true',
+                'data' => $provider
+            ], 200);
+
+        }catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+       
+    }
+
+    public function futureSlot(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'user_id'  => 'required',
+            ]);
+
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+
+            $stations = Station::selectRaw('station_name,station_longitude,station_latitude')->where('provider_id',$request->user_id)->get();
+            return response()->json([
+                'status' => 'true',
+                'data' => $stations
+            ], 200);
+        }catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+
+    public function getStationAll(Request $request){
+        try 
+        {
+            $data['charging_station_type_list'] = ChargingStationType::get();
+            $data['charging_station_status_list'] = ChargingStationStatus::get();
+            $data['charging_type_list'] = ChargingType::get();
+            $data['charger_connector_list'] = ChargerConnector::get();
+            return response()->json([
+                'status' => 'true',
+                'data' => $data
+            ], 200);
+        }catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+}
+  public function addStation(Request $request){
+        try 
+        {
+            $validateUser = Validator::make($request->all(), 
+            [
+                'provider_id' => 'required',
+                'station_name' => 'required|unique:stations',
+                'charging_station_type' => 'required',
+                'charging_station_status' => 'required',
+                'station_longitude' => 'required',
+                'station_latitude' => 'required',
+                'station_open_time' => 'required',
+                'station_close_time' => 'required',
+                'station_description' => 'required',
+                'station_image' => 'required|image|mimes:jpg,png,jpeg,gif,svg|max:2048',
+                'charger_list' => 'required'
+            ]);
+              
+           
+          
+            if($validateUser->fails()){
+                return response()->json([
+                    'status' => 'false',
+                    'message' => 'validation error',
+                    'errors' => $validateUser->errors()
+                ], 401);
+            }
+
+            $imageName = time().'.'.$request->station_image->extension();  
+            $request->file('station_image')->move(public_path('stations'), $imageName);
+            
+
+            $station = $request->all();
+            unset($station['charger_list']);
+            $station['station_image'] = URL::to('/').'/stations/'.$imageName;
+            $result = Station::create($station);
+              // var_dump($result);
+               //die();
+
+            $charger_lists = json_decode($request->charger_list,true);
+              var_dump($charger_lists);
+             die();
+            if(!empty($charger_lists)){
+                foreach($charger_lists as $key => $list){
+                    $charger_list = [
+                         'station_id' => $result->id,
+                        'charging_type' => $list['charging_type'],
+                        'charger_type' => $list['charger_type'],
+                        'charger_slots' => $list['charger_slots'],
+                        'charger_voltage' => $list['charger_voltage'],
+                        'price_per_mint' => $list['price_per_mint'],
+                        'charger_status' => $list['charger_status'],
+                    ];
+                    
+                    StationChargeList::create($charger_list);
+                  
+
+                       //var_dump($charger_list);
+                      //die();
+
+                    
+                }
+            }
+        
+            return response()->json([
+                'status' => 'true',
+                'message' => 'Station has been added successfully!',
+            ], 200);
+
+        }catch (\Throwable $th) {
+            return response()->json([
+                'status' => 'false',
+                'message' => $th->getMessage()
+            ], 500);
+        }
+    }
+
